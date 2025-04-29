@@ -397,7 +397,7 @@ def generate_html(data=None):
 
 def save_and_open_html(content):
     # Save the HTML content to a file
-    html_file = Path('transactions.html')
+    html_file = Path('index.html')
     html_file.write_text(content)
 
     # Open the file in a web browser
