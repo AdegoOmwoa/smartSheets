@@ -453,32 +453,70 @@ class TransactionApp:
         }});
         
         // PWA Installation
+        // Enhanced PWA Installation
         let deferredPrompt;
+        const installBtn = document.getElementById('install-btn');
+        const installContainer = document.getElementById('install-container');
         
         window.addEventListener('beforeinstallprompt', (e) => {{
+            // Prevent Chrome 67 and earlier from automatically showing the prompt
             e.preventDefault();
+            // Stash the event so it can be triggered later
             deferredPrompt = e;
+            
+            // Show the install button
             installBtn.style.display = 'flex';
             
-            installBtn.addEventListener('click', () => {{
-                installBtn.style.display = 'none';
+            // Log event for debugging
+            console.log('beforeinstallprompt event fired');
+            
+            // Optional: Show a custom install prompt
+            const installPrompt = document.createElement('div');
+            installPrompt.innerHTML = `
+                <div style="position: fixed; bottom: 20px; right: 20px; background: white; padding: 15px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 1000;">
+                    <p>Install this app for better experience?</p>
+                    <button id="custom-install" style="background: #3498db; color: white; border: none; padding: 8px 15px; border-radius: 4px; margin-right: 10px;">Install</button>
+                    <button id="dismiss-install" style="background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 4px;">Dismiss</button>
+                </div>
+            `;
+            document.body.appendChild(installPrompt);
+            
+            document.getElementById('custom-install').addEventListener('click', () => {{
+                installPrompt.style.display = 'none';
                 deferredPrompt.prompt();
-                
                 deferredPrompt.userChoice.then((choiceResult) => {{
                     if (choiceResult.outcome === 'accepted') {{
-                        console.log('User accepted install');
+                        console.log('User accepted install prompt');
+                    }} else {{
+                        console.log('User dismissed install prompt');
                     }}
                     deferredPrompt = null;
                 }});
             }});
+            
+            document.getElementById('dismiss-install').addEventListener('click', () => {{
+                installPrompt.style.display = 'none';
+            }});
         }});
         
-        // Register Service Worker
+        // Track app installation
+        window.addEventListener('appinstalled', (evt) => {{
+            console.log('PWA was installed');
+            installBtn.style.display = 'none';
+        }});
+        
+        // Check if app is already installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {{
+            console.log('Running in standalone mode');
+            installBtn.style.display = 'none';
+        }}
+        
+        // Register Service Worker with scope
         if ('serviceWorker' in navigator) {{
             window.addEventListener('load', () => {{
-                navigator.serviceWorker.register('sw.js')
+                navigator.serviceWorker.register('/pwa/sw.js', {{ scope: '/pwa/' }})
                     .then(registration => {{
-                        console.log('SW registered:', registration.scope);
+                        console.log('SW registered with scope:', registration.scope);
                     }})
                     .catch(err => {{
                         console.log('SW registration failed:', err);
