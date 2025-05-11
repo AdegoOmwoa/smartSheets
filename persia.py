@@ -1,34 +1,105 @@
 import requests
 from datetime import datetime
 import webbrowser
-from pathlib import Path
+import os
+import http.server
+import socketserver
+from threading import Thread
+from PIL import Image, ImageDraw
+import json
+import socket
 
-def fetch_google_sheet_data():
-    spreadsheet_id = '1YdBlC_Yz3WDncGG1zhUFdKnItw01V3OVbOvkFrJvsLk'
-    api_key = 'AIzaSyCg_XVzvEBJS9vZgSPLGABc5qdjQ-ijZ70'
-    range_name = 'Sheet1!A1:E1000000'
-    
-    url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}?key={api_key}'
-    
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        return data.get('values', [])
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching data: {e}")
-        return None
+class PWASetup:
+    @staticmethod
+    def create_pwa_files():
+        """Generate all required PWA files in root directory"""
+        # Create manifest.json
+        manifest = {
+            "name": "Transaction Records PWA",
+            "short_name": "TxRecords",
+            "start_url": "index.html",
+            "display": "standalone",
+            "background_color": "#2c3e50",
+            "theme_color": "#3498db",
+            "icons": [{
+                "src": "icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+            }]
+        }
+        with open("manifest.json", "w") as f:
+            json.dump(manifest, f, indent=2)
+        
+        # Create service worker
+        sw_content = """const CACHE_NAME = 'tx-records-v1';
+const ASSETS = [
+  'index.html',
+  'icon-192.png',
+  'manifest.json',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css',
+  'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap'
+];
 
-def generate_html(data=None):
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(ASSETS))
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  e.respondWith(
+    caches.match(e.request)
+      .then(res => res || fetch(e.request))
+  );
+});"""
+        with open("sw.js", "w") as f:
+            f.write(sw_content)
+        
+        # Generate app icon
+        img = Image.new('RGB', (192, 192), color='#3498db')
+        draw = ImageDraw.Draw(img)
+        draw.text((50, 80), "TRX", fill='white')
+        img.save("icon-192.png", "PNG")
+
+class TransactionApp:
+    def __init__(self):
+        self.data = None
     
-    html_content = f"""
-<!DOCTYPE html>
+    def fetch_google_sheet_data(self):
+        """Fetch data from Google Sheets API"""
+        spreadsheet_id = '1YdBlC_Yz3WDncGG1zhUFdKnItw01V3OVbOvkFrJvsLk'
+        api_key = 'AIzaSyCg_XVzvEBJS9vZgSPLGABc5qdjQ-ijZ70'
+        range_name = 'Sheet1!A1:E1000000'
+        
+        url = f'https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id}/values/{range_name}?key={api_key}'
+        
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            self.data = response.json().get('values', [])
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching data: {e}")
+            # Fallback data if API fails
+            self.data = [
+                ['Name', 'Amount', 'Items', 'Status'],
+                ['John Doe', '150', 'Notebook x3', 'Paid'],
+                ['Jane Smith', '230', 'Pens x10', 'Unpaid'],
+                ['Mike Johnson', '75', 'Markers x5', 'Pending']
+            ]
+    
+    def generate_html(self):
+        """Generate complete HTML with all styles and functionality"""
+        current_year = datetime.now().strftime('%Y')
+        
+        html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Transaction Records</title>
+    <meta name="theme-color" content="#3498db">
+    <title>Transaction Records PWA</title>
+    <link rel="manifest" href="manifest.json">
     <style>
         :root {{
             --primary: #2c3e50;
@@ -39,14 +110,9 @@ def generate_html(data=None):
             --success: #27ae60;
             --danger: #e74c3c;
             --warning: #f39c12;
+            --font-main: 'Roboto', sans-serif;
         }}
 
-        @font-face {{
-            font-family: 'Chap';
-            src: url('Chap-Regular.ttf') format('truetype');
-            font-display: swap;
-        }}
-        
         * {{
             margin: 0;
             padding: 0;
@@ -56,7 +122,7 @@ def generate_html(data=None):
         body {{
             background-color: #f5f7fa;
             color: var(--dark);
-            font-family: 'Chap', 'Helvetica Neue', Arial, sans-serif;
+            font-family: var(--font-main);
             line-height: 1.6;
             min-height: 100vh;
             display: flex;
@@ -125,64 +191,16 @@ def generate_html(data=None):
             background: var(--accent);
             color: white;
             border: none;
-            padding: 0 2rem;
+            padding: 0.8rem 1.5rem;
             border-radius: 4px;
             cursor: pointer;
             font-size: 1rem;
             transition: all 0.3s ease;
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 0.5rem;
-        }}
-
-         .search-btn {{
-            background: var(--accent);
-            color: white;
-            border: none;
-            padding: 0.8rem 1.5rem;  /* Increased padding for better touch targets */
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center; /* Center content better */
-            gap: 0.5rem;
-            min-width: 100px; /* Ensure minimum width */
-        }}
-        
-        /* Mobile-specific styles */
-        @media (max-width: 768px) {{
-            .container {{
-                padding: 1rem;
-            }}
-            
-            .search-box {{
-                flex-direction: column;
-                gap: 0.8rem; /* Reduced gap for mobile */
-            }}
-            
-            .search-input {{
-                padding: 0.9rem 1.2rem; /* Slightly larger for mobile */
-                width: 100%;
-            }}
-            
-            .search-btn {{
-                padding: 1rem 1.5rem; /* Larger padding for mobile */
-                width: 100%; /* Full width on mobile */
-                font-size: 1.1rem; /* Slightly larger text */
-            }}
-            
-            th, td {{
-                padding: 0.75rem;
-            }}
-        }}
-        
-        /* Extra small devices */
-        @media (max-width: 480px) {{
-            .search-btn {{
-                padding: 1.1rem 1.5rem; /* Even larger for very small screens */
-            }}
+            min-width: 100px;
         }}
         
         .search-btn:hover {{
@@ -191,7 +209,7 @@ def generate_html(data=None):
         }}
         
         .results-container {{
-            display: none;
+            display: block;
             background: white;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
@@ -250,6 +268,11 @@ def generate_html(data=None):
             color: white;
         }}
         
+        .status-pending {{
+            background: var(--warning);
+            color: var(--dark);
+        }}
+        
         .no-results {{
             text-align: center;
             padding: 2rem;
@@ -258,21 +281,33 @@ def generate_html(data=None):
             display: none;
         }}
         
-        .result-card {{
-            display: none;
-            background: white;
-            border-radius: 8px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        
         footer {{
             text-align: center;
             padding: 1.5rem;
             color: #7f8c8d;
             font-size: 0.9rem;
             border-top: 1px solid #eee;
+        }}
+        
+        #install-container {{
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+        }}
+        
+        #install-btn {{
+            background: var(--accent);
+            color: white;
+            border: none;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            cursor: pointer;
         }}
         
         @media (max-width: 768px) {{
@@ -284,11 +319,18 @@ def generate_html(data=None):
                 flex-direction: column;
             }}
             
+            .search-input, .search-btn {{
+                width: 100%;
+            }}
+            
             th, td {{
                 padding: 0.75rem;
+                font-size: 0.9rem;
             }}
         }}
     </style>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </head>
 <body>
     <header>
@@ -304,7 +346,7 @@ def generate_html(data=None):
             <p>Enter a name to find specific records</p>
             
             <div class="search-box">
-                <input type="text" class="search-input" id="search-input" placeholder="Enter name to search...">
+                <input type="text" class="search-input" id="search-input" placeholder="Enter name to search..." autocomplete="off">
                 <button class="search-btn" id="search-btn">
                     <i class="fas fa-search"></i> Search
                 </button>
@@ -329,33 +371,44 @@ def generate_html(data=None):
         </div>
     </main>
     
+    <div id="install-container">
+        <button id="install-btn" title="Install App">
+            <i class="fas fa-download"></i>
+        </button>
+    </div>
+    
     <footer>
-        <p>© {datetime.now().year} Transaction Management System</p>
+        <p>© {current_year} Transaction Management System</p>
     </footer>
 
     <script>
-        // Store all data in JavaScript variable
-        const allData = {data if data else []};
+        // Store all data
+        const allData = {json.dumps(self.data)};
         
+        // DOM elements
+        const searchInput = document.getElementById('search-input');
+        const searchBtn = document.getElementById('search-btn');
+        const resultsContainer = document.getElementById('results-container');
+        const tableBody = document.getElementById('table-body');
+        const noResults = document.getElementById('no-results');
+        const resultsTable = document.getElementById('results-table');
+        const installBtn = document.getElementById('install-btn');
+        
+        // Display search results
         function displayResults(results) {{
-            const tableBody = document.getElementById('table-body');
-            const resultsContainer = document.getElementById('results-container');
-            const noResults = document.getElementById('no-results');
-            
-            // Clear previous results
             tableBody.innerHTML = '';
             
             if (results.length === 0) {{
                 noResults.style.display = 'block';
-                document.getElementById('results-table').style.display = 'none';
+                resultsTable.style.display = 'none';
             }} else {{
                 noResults.style.display = 'none';
-                document.getElementById('results-table').style.display = 'table';
+                resultsTable.style.display = 'table';
                 
                 results.forEach(row => {{
-                    const status = row[4] || 'Unpaid';
+                    const status = row[3] || 'Unpaid';
                     const statusClass = `status-${{status.toLowerCase()}}`;
-                    const statusDisplay = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+                    const statusDisplay = status.toLowerCase().includes('paid') ? 'Paid' : 'Unpaid';
                     
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
@@ -371,39 +424,133 @@ def generate_html(data=None):
             resultsContainer.style.display = 'block';
         }}
         
-        document.getElementById('search-btn').addEventListener('click', function() {{
-            const searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
+        // Search functionality
+        function performSearch() {{
+            const searchTerm = searchInput.value.trim().toLowerCase();
             if (searchTerm) {{
-                const filteredData = allData.filter(row => {{
+                const filteredData = allData.filter((row, index) => {{
                     // Skip header row if present
-                    if (row[0] === 'Name' && row[1] === 'Amount') return false;
+                    if (index === 0 && row[0] === 'Name' && row[1] === 'Amount') return false;
                     return row[0]?.toLowerCase().includes(searchTerm);
                 }});
-                displayResults(filteredData);
+                displayResults(filteredData.length > 0 ? filteredData : []);
+            }} else {{
+                // Show all data (except header) when search is empty
+                displayResults(allData.slice(1));
             }}
+        }}
+        
+        // Event listeners
+        searchBtn.addEventListener('click', performSearch);
+        searchInput.addEventListener('input', performSearch);
+        searchInput.addEventListener('keypress', (e) => {{
+            if (e.key === 'Enter') performSearch();
         }});
         
-        document.getElementById('search-input').addEventListener('keypress', function(e) {{
-            if (e.key === 'Enter') {{
-                document.getElementById('search-btn').click();
-            }}
+        // PWA Installation
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {{
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.style.display = 'flex';
+            
+            installBtn.addEventListener('click', () => {{
+                installBtn.style.display = 'none';
+                deferredPrompt.prompt();
+                
+                deferredPrompt.userChoice.then((choiceResult) => {{
+                    if (choiceResult.outcome === 'accepted') {{
+                        console.log('User accepted install');
+                    }}
+                    deferredPrompt = null;
+                }});
+            }});
         }});
+        
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {{
+            window.addEventListener('load', () => {{
+                navigator.serviceWorker.register('sw.js')
+                    .then(registration => {{
+                        console.log('SW registered:', registration.scope);
+                    }})
+                    .catch(err => {{
+                        console.log('SW registration failed:', err);
+                    }});
+            }});
+        }}
+        
+        // Initial display of all data (without header row)
+        displayResults(allData.slice(1));
     </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </body>
-</html>
-    """
-    return html_content
+</html>"""
+        return html
 
-def save_and_open_html(content):
-    # Save the HTML content to a file
-    html_file = Path('index.html')
-    html_file.write_text(content)
+class RequestHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.path = '/index.html'
+        return super().do_GET()
 
-    # Open the file in a web browser
-    webbrowser.open(f'file://{html_file.resolve()}')
+class Server:
+    def __init__(self, port=8000):
+        self.port = port
+    
+    def start(self):
+        """Start server with custom request handler"""
+        with socketserver.TCPServer(("", self.port), RequestHandler) as httpd:
+            print(f"\n🚀 PWA running at: http://localhost:{self.port}")
+            print("📱 On mobile devices, connect to the same network and visit:")
+            print(f"   http://{self.get_ip()}:{self.port}")
+            print("📌 Look for 'Add to Home Screen' prompt in Chrome")
+            print("\n🛑 Press Ctrl+C to stop the server")
+            httpd.serve_forever()
+    
+    def get_ip(self):
+        """Get local IP address for mobile testing"""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = 'localhost'
+        finally:
+            s.close()
+        return ip
+
+def main():
+    # 1. Set up PWA infrastructure
+    print("🛠️  Setting up PWA files...")
+    PWASetup.create_pwa_files()
+    
+    # 2. Initialize and fetch data
+    print("📊 Fetching transaction data...")
+    app = TransactionApp()
+    app.fetch_google_sheet_data()
+    
+    # 3. Generate HTML with PWA features
+    print("🖥️  Generating PWA interface...")
+    html_content = app.generate_html()
+    with open("pwa/index.html", "w") as f:
+        f.write(html_content)
+    
+    # 4. Start server with redirection
+    server = Server()
+    server_thread = Thread(target=server.start)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    # 5. Open browser directly to index.html
+    webbrowser.open(f"http://localhost:{server.port}")
+    
+    # Keep running until interrupted
+    try:
+        while True:
+            pass
+    except KeyboardInterrupt:
+        print("\n👋 Server stopped")
 
 if __name__ == "__main__":
-    data = fetch_google_sheet_data()
-    html_content = generate_html(data)
-    save_and_open_html(html_content)
+    main()
