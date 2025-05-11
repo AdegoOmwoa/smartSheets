@@ -33,9 +33,9 @@ class PWASetup:
         # Create service worker
         sw_content = """const CACHE_NAME = 'tx-records-v1';
 const ASSETS = [
-  'index.html',
-  'icon-192.png',
-  'manifest.json',
+  '/pwa/index.html',
+  '/pwa/icon-192.png',
+  '/pwa/manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css',
   'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap'
 ];
@@ -45,6 +45,7 @@ self.addEventListener('install', (e) => {
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(ASSETS))
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('fetch', (e) => {
@@ -52,6 +53,10 @@ self.addEventListener('fetch', (e) => {
     caches.match(e.request)
       .then(res => res || fetch(e.request))
   );
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(clients.claim());
 });"""
         with open("sw.js", "w") as f:
             f.write(sw_content)

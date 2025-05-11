@@ -1,15 +1,21 @@
 {
   "name": "Transaction Records PWA",
   "short_name": "TxRecords",
-  "start_url": "index.html",
+  "start_url": "/pwa/index.html",
   "display": "standalone",
   "background_color": "#2c3e50",
   "theme_color": "#3498db",
-  "icons": [
-    {
-      "src": "icon-192.png",
+  "description": "A progressive web app for transaction records",
+  "orientation": "portrait",
+  "icons": [{
+      "src": "/pwa/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
-    }
-  ]
+  }, {
+      "src": "/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+  }],
+  "scope": "/pwa/",
+  "prefer_related_applications": false
 }
